@@ -354,3 +354,143 @@ fn type_size_from_subdir(subdir: &ThemeDirectory) -> ThemeDirectory {
         threshold: None,
     };
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_directory_matches_size_different_scale() {
+        let theme_directory = ThemeDirectory {
+            name: "Main".to_owned(),
+            size: 512,
+            scale: Some(1),
+            context: Some("actions".to_owned()),
+            r#type: ThemeDirectoryType::Fixed,
+            min_size: None,
+            max_size: None,
+            threshold: None,
+        };
+
+        assert_eq!(directory_matches_size(&theme_directory, 512, 2), false);
+    }
+
+    #[test]
+    fn test_directory_matches_size_fixed() {
+        let theme_directory = ThemeDirectory {
+            name: "Main".to_owned(),
+            size: 512,
+            scale: Some(1),
+            context: Some("actions".to_owned()),
+            r#type: ThemeDirectoryType::Fixed,
+            min_size: None,
+            max_size: None,
+            threshold: None,
+        };
+
+        assert_eq!(directory_matches_size(&theme_directory, 512, 1), true);
+        assert_eq!(directory_matches_size(&theme_directory, 256, 1), false);
+    }
+
+    #[test]
+    fn test_directory_matches_size_scalable() {
+        let theme_directory = ThemeDirectory {
+            name: "Main".to_owned(),
+            size: 512,
+            scale: Some(1),
+            context: Some("actions".to_owned()),
+            r#type: ThemeDirectoryType::Scalable,
+            min_size: Some(256),
+            max_size: Some(1024),
+            threshold: None,
+        };
+
+        assert_eq!(directory_matches_size(&theme_directory, 128, 1), false);
+        assert_eq!(directory_matches_size(&theme_directory, 256, 1), true);
+        assert_eq!(directory_matches_size(&theme_directory, 511, 1), true);
+        assert_eq!(directory_matches_size(&theme_directory, 512, 1), true);
+        assert_eq!(directory_matches_size(&theme_directory, 1024, 1), true);
+        assert_eq!(directory_matches_size(&theme_directory, 2048, 1), false);
+    }
+
+    #[test]
+    fn test_directory_matches_size_threshold() {
+        let theme_directory = ThemeDirectory {
+            name: "Main".to_owned(),
+            size: 512,
+            scale: Some(1),
+            context: Some("actions".to_owned()),
+            r#type: ThemeDirectoryType::Threshold,
+            min_size: Some(256),
+            max_size: Some(1024),
+            threshold: Some(128),
+        };
+
+        assert_eq!(directory_matches_size(&theme_directory, 128, 1), false);
+        assert_eq!(directory_matches_size(&theme_directory, 384, 1), true);
+        assert_eq!(directory_matches_size(&theme_directory, 512, 1), true);
+        assert_eq!(directory_matches_size(&theme_directory, 640, 1), true);
+        assert_eq!(directory_matches_size(&theme_directory, 1025, 1), false);
+    }
+
+    // Tests for directory_size_difference
+    #[test]
+    fn test_directory_size_distance_fixed() {
+        let theme_directory = ThemeDirectory {
+            name: "Main".to_owned(),
+            size: 512,
+            scale: Some(1),
+            context: Some("actions".to_owned()),
+            r#type: ThemeDirectoryType::Fixed,
+            min_size: Some(256),
+            max_size: Some(1024),
+            threshold: Some(128),
+        };
+
+        assert_eq!(directory_size_distance(&theme_directory, 512, 1), 0);
+        assert_eq!(directory_size_distance(&theme_directory, 256, 2), 0);
+        assert_eq!(directory_size_distance(&theme_directory, 100, 1), 412);
+        assert_eq!(directory_size_distance(&theme_directory, 1512, 1), 1000);
+
+    }
+
+    #[test]
+    fn test_directory_size_distance_scalable() {
+        let theme_directory = ThemeDirectory {
+            name: "Main".to_owned(),
+            size: 512,
+            scale: Some(1),
+            context: Some("actions".to_owned()),
+            r#type: ThemeDirectoryType::Scalable,
+            min_size: Some(256),
+            max_size: Some(1024),
+            threshold: Some(128),
+        };
+
+        assert_eq!(directory_size_distance(&theme_directory, 128, 1), 128);
+        assert_eq!(directory_size_distance(&theme_directory, 64, 2), 128);
+        assert_eq!(directory_size_distance(&theme_directory, 256, 1), 0);
+        assert_eq!(directory_size_distance(&theme_directory, 512, 1), 0);
+        assert_eq!(directory_size_distance(&theme_directory, 1024, 1), 0);
+        assert_eq!(directory_size_distance(&theme_directory, 2024, 1), 1000);
+    }
+
+    #[test]
+    fn test_directory_size_distance_threshold() {
+        let theme_directory = ThemeDirectory {
+            name: "Main".to_owned(),
+            size: 512,
+            scale: Some(1),
+            context: Some("actions".to_owned()),
+            r#type: ThemeDirectoryType::Threshold,
+            min_size: Some(256),
+            max_size: Some(1024),
+            threshold: Some(128),
+        };
+
+        assert_eq!(directory_size_distance(&theme_directory, 256, 1), 256);
+        assert_eq!(directory_size_distance(&theme_directory, 384, 1), 0);
+        assert_eq!(directory_size_distance(&theme_directory, 512, 1), 0);
+        assert_eq!(directory_size_distance(&theme_directory, 640, 1), 0);
+        assert_eq!(directory_size_distance(&theme_directory, 768, 1), 256);
+    }
+}
