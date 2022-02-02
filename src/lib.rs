@@ -1,8 +1,56 @@
+use std::path::Path;
+use std::path::PathBuf;
+pub fn new(theme: Theme) -> IconFinderInstance {
+    IconFinderInstance {theme}
+}
+
+pub struct IconFinderInstance {
+    pub theme: Theme
+}
+
+impl IconFinderInstance {
+    pub fn find_icon(self, icon: &str, size: i16, scale: i16) -> Option<String> {
+        find_icon(icon, size, scale, self.theme)
+    }
+}
+
+pub struct Icon {
+    pub theme: Theme
+}
+
+
+pub struct UnloadedTheme {
+    location: Path
+}
+
+impl UnloadedTheme {
+    fn load(self) -> Theme {
+        Theme {
+            name: String::from("Insert name of theme"),
+            comment: String::from("Insert comment after it's read"),
+            inherits: vec!(),
+            location: self.location,
+            directories: vec!()
+
+        }
+    }
+}
+
+/// Find the fallback Hicolor theme
+fn find_fallback_theme() -> UnloadedTheme {
+    for directory in &BASE_DIRECTORIES {
+        let path = Path::new(&format!("{}/index.theme", directory));
+        if path.exists() {
+            return UnloadedTheme {
+                location: path
+            }
+        }
+    }
+}
+
 /// Icon Theme Specification
 /// ========================
 /// Find icons for applications according to the freedesktop.org specifications
-
-use std::path::Path;
 
 pub fn get_user_selected_theme() -> String {
     // TODO: Actually fetch the theme
@@ -13,11 +61,13 @@ pub fn get_user_selected_theme() -> String {
 /// An icon theme is a named set of icons. It is used to map from an iconname
 /// and size to a file. Themes may inherit from other themes as a way to extend
 /// them.
+// TODO: Figure out what location takes presidence in case of multiple locations
 pub struct Theme {
     pub name: String,
     pub comment: String,
     pub inherits: Vec<Theme>,
     pub directories: Vec<ThemeDirectory>,
+    pub location: Path,
 }
 
 /// # Per directory keys
@@ -38,8 +88,8 @@ pub struct ThemeDirectory {
 /// # Per directory key types
 /// The type of icon sizes for the icons in this directory. Valid types are
 /// Fixed, Scalable and Threshold. The type decides what other keys in the
-/// section are used. If not specified, the default is Threshold. 
-/// TODO: Define Threshold as default 
+/// section are used. If not specified, the default is Threshold.
+/// TODO: Define Threshold as default
 pub enum ThemeDirectoryType {
     Fixed,
     Scalable,
@@ -284,20 +334,23 @@ fn lookup_fallback_icon(icon_name: &str) -> Option<String> {
     return None;
 }
 
-fn directory_matches_size(subdir: &ThemeDirectory, icon_size: i16, icon_scale: i16) -> bool {
-    let theme_directory = type_size_from_subdir(subdir);
-
+fn directory_matches_size(theme_directory: &ThemeDirectory, icon_size: i16, icon_scale: i16) -> bool {
     if icon_scale != theme_directory.scale.unwrap_or(DEFAULT_SCALE) {
         return false;
     }
 
     let min_size = theme_directory.min_size.unwrap_or(theme_directory.size);
     let max_size = theme_directory.max_size.unwrap_or(theme_directory.size);
+    println!("{:?}", icon_size);
+    println!("{:?}", min_size);
+    println!("{:?}", max_size);
     let threshold = theme_directory.threshold.unwrap_or(DEFAULT_THRESHOLD);
 
     return match theme_directory.r#type {
-        ThemeDirectoryType::Fixed => theme_directory.size == icon_size,
-        ThemeDirectoryType::Scalable => min_size <= icon_size && icon_size <= max_size,
+        ThemeDirectoryType::Fixed => {
+            println!("Fixed");
+            theme_directory.size == icon_size },
+        ThemeDirectoryType::Scalable => { min_size <= icon_size && icon_size <= max_size },
         ThemeDirectoryType::Threshold => {
             theme_directory.size - threshold <= icon_size
                 && icon_size <= theme_directory.size + threshold
@@ -305,9 +358,11 @@ fn directory_matches_size(subdir: &ThemeDirectory, icon_size: i16, icon_scale: i
     };
 }
 
-fn directory_size_distance(subdir: &ThemeDirectory, icon_size: i16, icon_scale: i16) -> i16 {
-    let theme_directory = type_size_from_subdir(subdir);
-
+/// Watch out with threshold! The distance is 0 as long as the icon_size * icon_scale is between
+/// the threshold. But as soon as it's outside of the threshold the distance is calculated from the
+/// set icon size for the directory. Which is equal to threshold.
+/// This is not identical to the spec: Read more here: https://github.com/DanielVoogsgerd/icon-finder-rs/issues/3
+fn directory_size_distance(theme_directory: &ThemeDirectory, icon_size: i16, icon_scale: i16) -> i16 {
     let min_size = theme_directory.min_size.unwrap_or(theme_directory.size);
     let max_size = theme_directory.max_size.unwrap_or(theme_directory.size);
     let threshold = theme_directory.threshold.unwrap_or(DEFAULT_THRESHOLD);
@@ -315,8 +370,11 @@ fn directory_size_distance(subdir: &ThemeDirectory, icon_size: i16, icon_scale: 
 
     return match theme_directory.r#type {
         ThemeDirectoryType::Fixed => {
+            // FIXME: The integers are signed because of this line. On one hand I could split this
+            // up into two lines and make them unsigned, but it might also be more hassle than that
+            // it's worth.
             (theme_directory.size * theme_directory_scale - icon_size * icon_scale).abs()
-        },
+        }
         ThemeDirectoryType::Scalable => {
             if icon_size * icon_scale < min_size * theme_directory_scale {
                 return min_size * theme_directory_scale - icon_size * icon_scale;
@@ -327,33 +385,21 @@ fn directory_size_distance(subdir: &ThemeDirectory, icon_size: i16, icon_scale: 
             }
 
             return 0;
-        },
+        }
         ThemeDirectoryType::Threshold => {
             if icon_size * icon_scale < (theme_directory.size - threshold) * theme_directory_scale {
-                return min_size * theme_directory_scale - icon_size * icon_scale;
+                return theme_directory.size * theme_directory_scale - icon_size * icon_scale;
             }
 
             if icon_size * icon_scale > (theme_directory.size + threshold) * theme_directory_scale {
-                return icon_size * icon_scale - max_size * theme_directory_scale;
+                return icon_size * icon_scale - theme_directory.size * theme_directory_scale;
             }
 
             return 0;
         }
-    }
-}
-
-fn type_size_from_subdir(subdir: &ThemeDirectory) -> ThemeDirectory {
-    return ThemeDirectory {
-        name: "Main".to_owned(),
-        size: 512,
-        scale: Some(1),
-        context: Some("actions".to_owned()),
-        r#type: ThemeDirectoryType::Fixed,
-        min_size: None,
-        max_size: None,
-        threshold: None,
     };
 }
+
 
 #[cfg(test)]
 mod tests {
